@@ -1,5 +1,6 @@
+import SwiftUI
 
-struct RegisterView: View {
+struct LoginView: View {
     @State private var username: String = ""
     @State private var password: String = ""
     @State private var token: String?
@@ -14,14 +15,14 @@ struct RegisterView: View {
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
             
-            Button("Regisztráció") {
-                AuthService().register(username: username, password: password) { result in
+            Button("Bejelentkezés") {
+                AuthService().login(username: username, password: password) { result in
                     switch result {
                     case .success(let jwt):
                         self.token = jwt
                         UserDefaults.standard.set(jwt, forKey: "jwtToken")
                     case .failure(let error):
-                        print("Regisztráció sikertelen: \(error)")
+                        print("Bejelentkezés sikertelen: \(error)")
                     }
                 }
             }
