@@ -3,8 +3,8 @@ import SwiftUI
 struct EdzesCard: View {
     let edzes: Edzes
     @State private var showingDetail = false
-    // Teszt adatok a jelentkezőkhöz
-    let jelentkezok = ["NJ", "KÉ", "SP", "KA", "TZ", "VB"]
+    @State private var resztvevok: EdzesResztvevok?
+    @State private var isLoadingResztvevok = true
     
     private var timeFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -80,39 +80,32 @@ struct EdzesCard: View {
                     
                     Spacer()
                     
-                    // Átfedésben lévő profilképek
-                    HStack(spacing: -10) {
-                        ForEach(Array(jelentkezok.prefix(5).enumerated()), id: \.element) { index, monogram in
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Circle()
-                                        .fill(Color.blue.opacity(0.1))
-                                        .frame(width: 30, height: 30)
-                                        .overlay(
-                                            Text(monogram)
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(.blue)
-                                        )
-                                )
+                    if let resztvevok = resztvevok {
+                        // Átfedésben lévő profilképek
+                        HStack(spacing: -10) {
+                            ForEach(Array(resztvevok.resztvevok.prefix(5)), id: \.id) { resztvevo in
+                                ProfilKep(url: resztvevo.profil_kep, size: 32)
+                            }
+                            
+                            if resztvevok.resztvevok_szama > 5 {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        Circle()
+                                            .fill(Color.blue.opacity(0.1))
+                                            .frame(width: 30, height: 30)
+                                            .overlay(
+                                                Text("+\(resztvevok.resztvevok_szama - 5)")
+                                                    .font(.system(size: 12, weight: .medium))
+                                                    .foregroundColor(.blue)
+                                            )
+                                    )
+                            }
                         }
-                        
-                        if jelentkezok.count > 5 {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Circle()
-                                        .fill(Color.blue.opacity(0.1))
-                                        .frame(width: 30, height: 30)
-                                        .overlay(
-                                            Text("+\(jelentkezok.count - 5)")
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(.blue)
-                                        )
-                                )
-                        }
+                    } else {
+                        ProgressView()
+                            .frame(width: 32, height: 32)
                     }
                 }
                 
@@ -139,6 +132,28 @@ struct EdzesCard: View {
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingDetail) {
             EdzesDetailView(edzes: edzes)
+        }
+        .task {
+            await fetchResztvevok()
+        }
+    }
+    
+    private func fetchResztvevok() async {
+        guard let url = URL(string: "\(Settings.baseURL)/api/edzesek/\(edzes.id)/jelentkezok") else {
+            return
+        }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let decoded = try JSONDecoder().decode(EdzesResztvevok.self, from: data)
+            
+            DispatchQueue.main.async {
+                self.resztvevok = decoded
+                self.isLoadingResztvevok = false
+            }
+        } catch {
+            print("Error fetching resztvevok: \(error)")
+            isLoadingResztvevok = false
         }
     }
 }

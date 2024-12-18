@@ -6,11 +6,8 @@ struct EdzesDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingEventAlert = false
     @State private var eventAlertMessage = ""
-    // Teszt adatok - később API-ból jön
-    let jelentkezok = [
-        "Nagy János", "Kiss Éva", "Szabó Péter", 
-        "Kovács Anna", "Tóth Zoltán", "Varga Béla"
-    ]
+    @State private var resztvevok: EdzesResztvevok?
+    @State private var isLoadingResztvevok = true
     
     var body: some View {
         ScrollView {
@@ -80,7 +77,7 @@ struct EdzesDetailView: View {
                             Image(systemName: "person.2")
                                 .font(.title2)
                                 .foregroundColor(.blue)
-                            Text("\(jelentkezok.count) fő")
+                            Text("\(resztvevok?.resztvevok_szama ?? 0) fő")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                         }
@@ -137,45 +134,77 @@ struct EdzesDetailView: View {
                 
                 // Résztvevők
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Résztvevők (\(jelentkezok.count))")
+                    Text("Résztvevők (\(resztvevok?.resztvevok_szama ?? 0))")
                         .font(.title3)
                         .fontWeight(.semibold)
                         .padding(.horizontal)
                     
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 16) {
-                        ForEach(jelentkezok, id: \.self) { nev in
-                            HStack(spacing: 12) {
-                                Circle()
-                                    .fill(Color.blue.opacity(0.1))
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Text(String(nev.prefix(1)))
-                                            .foregroundColor(.blue)
-                                            .font(.system(size: 16, weight: .medium))
-                                    )
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(nev)
-                                        .font(.system(size: 16, weight: .medium))
-                                    Text("Tag")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                }
-                                
-                                Spacer()
-                            }
+                    if isLoadingResztvevok {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(12)
+                    } else if let resztvevok = resztvevok {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 16) {
+                            ForEach(resztvevok.resztvevok) { felhasznalo in
+                                HStack(spacing: 12) {
+                                    AsyncImage(url: URL(string: felhasznalo.profil_kep)) { phase in
+                                        switch phase {
+                                        case .success(let image):
+                                            image
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                                .frame(width: 40, height: 40)
+                                                .clipShape(Circle())
+                                        case .failure(_):
+                                            Circle()
+                                                .fill(Color.blue.opacity(0.1))
+                                                .frame(width: 40, height: 40)
+                                                .overlay(
+                                                    Text(String(felhasznalo.nev.prefix(1)))
+                                                        .foregroundColor(.blue)
+                                                        .font(.system(size: 16, weight: .medium))
+                                                )
+                                        case .empty:
+                                            ProgressView()
+                                                .frame(width: 40, height: 40)
+                                        @unknown default:
+                                            Circle()
+                                                .fill(Color.blue.opacity(0.1))
+                                                .frame(width: 40, height: 40)
+                                        }
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(felhasznalo.nev)
+                                            .font(.system(size: 16, weight: .medium))
+                                        HStack(spacing: 4) {
+                                            Circle()
+                                                .fill(felhasznalo.ottvolt ? Color.green : Color.orange)
+                                                .frame(width: 8, height: 8)
+                                            Text(felhasznalo.ottvolt ? "Részt vett" : "Jelentkezett")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                .padding()
+                                .background(Color(.secondarySystemBackground))
+                                .cornerRadius(12)
+                            }
                         }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
                 }
             }
             .padding(.bottom, 100)
+        }
+        .task {
+            await fetchResztvevok()
         }
         .overlay(alignment: .bottom) {
             if !edzes.lezart {
@@ -246,6 +275,28 @@ struct EdzesDetailView: View {
                 }
                 showingEventAlert = true
             }
+        }
+    }
+    
+    private func fetchResztvevok() async {
+        isLoadingResztvevok = true
+        
+        guard let url = URL(string: "\(Settings.baseURL)/api/edzesek/\(edzes.id)/jelentkezok") else {
+            isLoadingResztvevok = false
+            return
+        }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let decoded = try JSONDecoder().decode(EdzesResztvevok.self, from: data)
+            
+            DispatchQueue.main.async {
+                self.resztvevok = decoded
+                self.isLoadingResztvevok = false
+            }
+        } catch {
+            print("Error fetching resztvevok: \(error)")
+            isLoadingResztvevok = false
         }
     }
     
