@@ -77,6 +77,10 @@ struct LoginView: View {
                 }
 
                 if let data = data {
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("Szerver válasz: \(responseString)")
+                    }
+                    
                     do {
                         let userResponse = try JSONDecoder().decode(UserResponse.self, from: data)
                         userData.token = userResponse.token

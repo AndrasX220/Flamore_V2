@@ -12,5 +12,6 @@ struct Edzes: Codable, Identifiable {
     let megnevezes: String
     let idopont: String
     let terem_id: Int
+    let klub_id: Int
     let lezart: Bool
 }
