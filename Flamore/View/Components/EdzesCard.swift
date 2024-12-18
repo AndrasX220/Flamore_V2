@@ -2,98 +2,154 @@ import SwiftUI
 
 struct EdzesCard: View {
     let edzes: Edzes
-    @State private var isRegistered = false
-    @State private var showDetails = false
+    @State private var showingDetail = false
+    // Teszt adatok a jelentkezőkhöz
+    let jelentkezok = ["NJ", "KÉ", "SP", "KA", "TZ", "VB"]
     
-    private func formatDate(_ dateString: String) -> (date: String, time: String) {
-        let inputFormatter = DateFormatter()
-        inputFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
-        
-        guard let date = inputFormatter.date(from: dateString) else {
-            return (date: dateString, time: "")
-        }
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = Locale(identifier: "hu_HU")
-        
-        dateFormatter.dateFormat = "MMM d."
-        let formattedDate = dateFormatter.string(from: date)
-        
-        dateFormatter.dateFormat = "HH:mm"
-        let formattedTime = dateFormatter.string(from: date)
-        
-        return (date: formattedDate.lowercased(), time: formattedTime)
+    private var timeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
     }
     
-    var formattedDateTime: (date: String, time: String) {
-        return formatDate(edzes.idopont)
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d."
+        formatter.locale = Locale(identifier: "hu_HU")
+        return formatter
+    }
+    
+    private var isoFormatter: ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }
+    
+    private var date: Date? {
+        isoFormatter.date(from: edzes.idopont)
+    }
+    
+    private var formattedTime: String {
+        guard let date = date else { return "Nincs időpont" }
+        return timeFormatter.string(from: date)
+    }
+    
+    private var formattedDate: String {
+        guard let date = date else { return "Nincs dátum" }
+        return dateFormatter.string(from: date)
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Button(action: { 
-                withAnimation(.spring()) {
-                    showDetails.toggle()
-                }
-            }) {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Fejléc
-                    Text(edzes.megnevezes)
-                        .font(.system(size: 18, weight: .bold))
-                        .lineLimit(1)
-                        .foregroundColor(.primary)
-                    
-                    // Terem
-                    HStack {
-                        Image(systemName: "mappin.circle.fill")
-                            .foregroundColor(.blue)
-                        Text("Terem \(edzes.terem_id)")
+        Button(action: { showingDetail = true }) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Felső rész: Cím és státusz
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(edzes.megnevezes)
+                            .font(.headline)
+                            .lineLimit(2)
+                        
+                        HStack(spacing: 16) {
+                            Label(formattedDate, systemImage: "calendar")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Label(formattedTime, systemImage: "clock")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
                     }
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
                     
-                    // Dátum és időpont egymás mellett
-                    HStack(spacing: 16) {
-                        // Dátum
-                        HStack {
-                            Image(systemName: "calendar")
-                                .foregroundColor(.blue)
-                            Text(formattedDateTime.date)
-                                .fontWeight(.medium)
+                    Spacer()
+                    
+                    if edzes.lezart {
+                        Text("Lezárva")
+                            .font(.caption)
+                            .padding(6)
+                            .background(Color.red.opacity(0.1))
+                            .foregroundColor(.red)
+                            .cornerRadius(8)
+                    }
+                }
+                
+                // Középső rész: Terem információ és jelentkezők
+                HStack {
+                    Label("Terem \(edzes.terem_id)", systemImage: "building.2")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    Spacer()
+                    
+                    // Átfedésben lévő profilképek
+                    HStack(spacing: -10) {
+                        ForEach(Array(jelentkezok.prefix(5).enumerated()), id: \.element) { index, monogram in
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Circle()
+                                        .fill(Color.blue.opacity(0.1))
+                                        .frame(width: 30, height: 30)
+                                        .overlay(
+                                            Text(monogram)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.blue)
+                                        )
+                                )
                         }
                         
-                        // Időpont
-                        HStack {
-                            Image(systemName: "clock")
-                                .foregroundColor(.blue)
-                            Text(formattedDateTime.time)
-                                .fontWeight(.medium)
+                        if jelentkezok.count > 5 {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Circle()
+                                        .fill(Color.blue.opacity(0.1))
+                                        .frame(width: 30, height: 30)
+                                        .overlay(
+                                            Text("+\(jelentkezok.count - 5)")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.blue)
+                                        )
+                                )
                         }
                     }
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
+                }
+                
+                Divider()
+                
+                // Alsó rész: Jelentkezés gomb
+                if !edzes.lezart {
+                    Button(action: {}) {
+                        Text("Jelentkezés")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(8)
+                    }
                 }
             }
-            
-            // Jelentkezés gomb
-            Button(action: { isRegistered.toggle() }) {
-                HStack {
-                    Image(systemName: isRegistered ? "checkmark.circle.fill" : "plus.circle.fill")
-                    Text(isRegistered ? "Lemondás" : "Jelentkezés")
-                }
-                .font(.system(size: 16, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    Capsule()
-                        .fill(isRegistered ? Color.red.opacity(0.2) : Color.blue.opacity(0.2))
-                )
-                .foregroundColor(isRegistered ? .red : .blue)
-            }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(12)
+            .opacity(edzes.lezart ? 0.7 : 1.0)
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingDetail) {
+            EdzesDetailView(edzes: edzes)
+        }
     }
+}
+
+#Preview {
+    EdzesCard(edzes: Edzes(
+        id: 1,
+        megnevezes: "Reggeli Jóga",
+        idopont: "2024-06-01T08:00:00.000Z",
+        terem_id: 3,
+        klub_id: 2,
+        lezart: false
+    ))
 } 

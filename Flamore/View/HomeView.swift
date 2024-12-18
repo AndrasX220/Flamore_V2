@@ -2,19 +2,58 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var userData: UserData
+    @State private var selectedTab = 0
     @State private var edzesek: [Edzes] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var selectedTerem: Int?
+    @State private var selectedEdzesType: String?
     @State private var showAllWorkouts = false
     
-    var termek: [Int] {
-        Array(Set(edzesek.map { $0.terem_id })).sorted()
+    var edzesTypes: [String] {
+        let types = Array(Set(edzesek.map { $0.megnevezes }))
+        return types.sorted { a, b in
+            let order = [
+                "ovikarate",
+                "gyerek karate",
+                "haladó karate",
+                "röplabda",
+                "zsákedző",
+                "zsákedző haladó"
+            ]
+            
+            let aIndex = order.firstIndex { a.lowercased().contains($0) } ?? order.count
+            let bIndex = order.firstIndex { b.lowercased().contains($0) } ?? order.count
+            return aIndex < bIndex
+        }
+    }
+    
+    private func getEdzesIcon(for type: String) -> String {
+        switch type.lowercased() {
+        case let t where t.contains("gyerek karate"): return "🥋"
+        case let t where t.contains("haladó karate"): return "🥋"
+        case let t where t.contains("ovikarate"): return "🥋"
+        case let t where t.contains("röplabda"): return "🏐"
+        case let t where t.contains("zsákedző haladó"): return "🥊"
+        case let t where t.contains("zsákedző"): return "🥊"
+        default: return "💪"
+        }
+    }
+    
+    private func formatEdzesType(_ type: String) -> String {
+        switch type.lowercased() {
+        case let t where t.contains("gyerek karate"): return "Gyerek K."
+        case let t where t.contains("haladó karate"): return "Haladó K."
+        case let t where t.contains("ovikarate"): return "Ovi K."
+        case let t where t.contains("röplabda"): return "Röpi"
+        case let t where t.contains("zsákedző haladó"): return "Zsák H."
+        case let t where t.contains("zsákedző"): return "Zsák"
+        default: return type.components(separatedBy: " ").first ?? type
+        }
     }
     
     var filteredEdzesek: [Edzes] {
-        if let selectedTerem = selectedTerem {
-            return edzesek.filter { $0.terem_id == selectedTerem }
+        if let selectedType = selectedEdzesType {
+            return edzesek.filter { $0.megnevezes == selectedType }
         }
         return edzesek
     }
@@ -23,11 +62,40 @@ struct HomeView: View {
         if showAllWorkouts {
             return filteredEdzesek
         } else {
-            return Array(filteredEdzesek.prefix(4)) // Csak 4 edzés megjelenítése
+            return Array(filteredEdzesek.prefix(4))
         }
     }
     
     var body: some View {
+        TabView(selection: $selectedTab) {
+            mainView
+                .tabItem {
+                    Label(getTitle(for: 0), systemImage: getIcon(for: 0))
+                }
+                .tag(0)
+            
+            HirekView()
+                .tabItem {
+                    Label(getTitle(for: 1), systemImage: getIcon(for: 1))
+                }
+                .tag(1)
+            
+            Text("Előzmények")
+                .tabItem {
+                    Label(getTitle(for: 2), systemImage: getIcon(for: 2))
+                }
+                .tag(2)
+            
+            InfoView()
+                .tabItem {
+                    Label(getTitle(for: 3), systemImage: getIcon(for: 3))
+                }
+                .tag(3)
+        }
+        .tint(.blue)
+    }
+    
+    private var mainView: some View {
         ScrollView {
             VStack(spacing: 20) {
                 // Profil fejléc
@@ -72,38 +140,44 @@ struct HomeView: View {
                     .padding(.horizontal)
                 }
                 
-                // Terem választó az API adatokból
+                // Edzéstípus választó
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         Button(action: {
                             withAnimation {
-                                selectedTerem = nil
+                                selectedEdzesType = nil
                             }
                         }) {
-                            Text("Összes")
-                                .foregroundColor(selectedTerem == nil ? .white : .primary)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(
-                                    Capsule()
-                                        .fill(selectedTerem == nil ? Color.blue : Color.gray.opacity(0.2))
-                                )
+                            HStack(spacing: 6) {
+                                Text("🎯")
+                                Text("Mind")
+                            }
+                            .foregroundColor(selectedEdzesType == nil ? .white : .primary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .fill(selectedEdzesType == nil ? Color.blue : Color.gray.opacity(0.2))
+                            )
                         }
                         
-                        ForEach(termek, id: \.self) { terem in
+                        ForEach(edzesTypes, id: \.self) { type in
                             Button(action: {
                                 withAnimation {
-                                    selectedTerem = terem
+                                    selectedEdzesType = type
                                 }
                             }) {
-                                Text("\(terem)")
-                                    .foregroundColor(selectedTerem == terem ? .white : .primary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        Capsule()
-                                            .fill(selectedTerem == terem ? Color.blue : Color.gray.opacity(0.2))
-                                    )
+                                HStack(spacing: 6) {
+                                    Text(getEdzesIcon(for: type))
+                                    Text(formatEdzesType(type))
+                                }
+                                .foregroundColor(selectedEdzesType == type ? .white : .primary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule()
+                                        .fill(selectedEdzesType == type ? Color.blue : Color.gray.opacity(0.2))
+                                )
                             }
                         }
                     }
@@ -113,10 +187,9 @@ struct HomeView: View {
                 // Edzések lista
                 VStack(spacing: 16) {
                     ForEach(displayedEdzesek) { edzes in
-                        EdzesListaItem(edzes: edzes)
+                        EdzesCard(edzes: edzes)
                     }
                     
-                    // További edzések / Bezárás gomb
                     if filteredEdzesek.count > 4 {
                         Button(action: {
                             withAnimation {
@@ -180,86 +253,30 @@ struct HomeView: View {
             }
         }.resume()
     }
-}
-
-struct EdzesListaItem: View {
-    let edzes: Edzes
-    @State private var isRegistered = false
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Edzés címe
-            Text(edzes.megnevezes)
-                .font(.title3)
-                .bold()
-            
-            // Terem info
-            HStack {
-                Image(systemName: "info.circle.fill")
-                    .foregroundColor(.blue)
-                Text("Nagy terem")
-                    .foregroundColor(.gray)
-            }
-            
-            // Időpont
-            HStack(spacing: 16) {
-                HStack {
-                    Image(systemName: "calendar")
-                        .foregroundColor(.blue)
-                    Text("jún. 1.")
-                        .foregroundColor(.gray)
-                }
-                
-                HStack {
-                    Image(systemName: "clock")
-                        .foregroundColor(.blue)
-                    Text("20:00")
-                        .foregroundColor(.gray)
-                }
-            }
-            
-            // Résztvevők
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Résztvevők")
-                    .foregroundColor(.gray)
-                
-                HStack(spacing: 20) {
-                    ForEach(["Kis Béla", "Nagy Ildikó", "Horváth Zsuzsa", "Szabó Bence"], id: \.self) { nev in
-                        VStack {
-                            Image(systemName: "person.circle.fill")
-                                .resizable()
-                                .frame(width: 30, height: 30)
-                                .foregroundColor(.blue)
-                            Text(nev)
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-            }
-            
-            // Jelentkezés gomb
-            Button(action: { isRegistered.toggle() }) {
-                HStack {
-                    Spacer()
-                    Image(systemName: "plus")
-                    Text("Jelentkezés")
-                    Spacer()
-                }
-                .foregroundColor(.blue)
-                .padding()
-                .background(Color.blue.opacity(0.2))
-                .cornerRadius(10)
-            }
+    private func getIcon(for index: Int) -> String {
+        switch index {
+        case 0: return "house.fill"
+        case 1: return "newspaper.fill"
+        case 2: return "clock.fill"
+        case 3: return "info.circle.fill"
+        default: return ""
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(15)
+    }
+    
+    private func getTitle(for index: Int) -> String {
+        switch index {
+        case 0: return "Főoldal"
+        case 1: return "Hírek"
+        case 2: return "Előzmények"
+        case 3: return "Információk"
+        default: return ""
+        }
     }
 }
 
 #Preview {
     let userData = UserData()
-    userData.nev = "Teszt Felhasználó"
+    userData.nev = "Bandesz"
     return HomeView().environmentObject(userData)
 } 
