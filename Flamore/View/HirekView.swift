@@ -156,6 +156,7 @@ struct HirDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                // Kép nézet - minimum 44x44pt érintési felület
                 if let kepUrl = hir.kep,
                    let url = URL(string: kepUrl) {
                     Button(action: {
@@ -169,6 +170,16 @@ struct HirDetailView: View {
                                     .aspectRatio(contentMode: .fill)
                                     .frame(maxHeight: 300)
                                     .clipped()
+                                    .overlay(
+                                        Image(systemName: "magnifyingglass")
+                                            .font(.system(size: 20, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .padding(8)
+                                            .background(Color.black.opacity(0.6))
+                                            .clipShape(Circle())
+                                            .padding(12),
+                                        alignment: .bottomTrailing
+                                    )
                             case .failure(_):
                                 defaultSportImage
                             case .empty:
@@ -179,51 +190,19 @@ struct HirDetailView: View {
                             }
                         }
                     }
-                    .fullScreenCover(isPresented: $showingFullScreenImage) {
-                        ZStack {
-                            Color.black.edgesIgnoringSafeArea(.all)
-                            
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .edgesIgnoringSafeArea(.all)
-                                case .failure(_):
-                                    defaultSportImage
-                                case .empty:
-                                    ProgressView()
-                                @unknown default:
-                                    defaultSportImage
-                                }
-                            }
-                            
-                            VStack {
-                                HStack {
-                                    Spacer()
-                                    Button(action: {
-                                        showingFullScreenImage = false
-                                    }) {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 30))
-                                            .foregroundColor(.white)
-                                            .padding()
-                                    }
-                                }
-                                Spacer()
-                            }
-                        }
-                    }
+                    .frame(minHeight: 44) // Minimum érintési felület
                 } else {
                     defaultSportImage
                 }
                 
                 VStack(alignment: .leading, spacing: 16) {
+                    // Cím - minimum 11pt betűméret
                     Text(hir.cim)
                         .font(.system(size: 24, weight: .bold))
                         .padding(.horizontal)
+                        .lineSpacing(4)
                     
+                    // Dátum - megfelelő kontraszt
                     Text(hir.letrehozasDatum.formatDateToSingleLine())
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
@@ -232,27 +211,26 @@ struct HirDetailView: View {
                     Divider()
                         .padding(.horizontal)
                     
+                    // Tartalom - megfelelő sorköz és betűméret
                     Text(hir.tartalom)
                         .font(.system(size: 16))
-                        .lineSpacing(6)
+                        .lineSpacing(8)
                         .padding(.horizontal)
                     
-                    // Link gomb visszaadása
+                    // Link gomb - minimum 44pt magasság
                     if let url = findURL(in: hir.tartalom) {
                         Link(destination: url) {
-                            HStack {
+                            HStack(spacing: 8) {
                                 Image(systemName: "link")
-                                    .font(.system(size: 16))
+                                    .font(.system(size: 18))
                                 Text("Link megnyitása")
                                     .font(.system(size: 16, weight: .medium))
                             }
-                            .foregroundColor(.blue)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.blue, lineWidth: 1)
-                            )
+                            .frame(height: 44) // Minimum magasság
+                            .frame(maxWidth: .infinity)
+                            .foregroundColor(.white)
+                            .background(Color.blue)
+                            .cornerRadius(10)
                         }
                         .padding(.horizontal)
                         .padding(.top, 8)
@@ -263,6 +241,47 @@ struct HirDetailView: View {
         }
         .background(Color(.systemBackground))
         .edgesIgnoringSafeArea(.top)
+        .fullScreenCover(isPresented: $showingFullScreenImage) {
+            ZStack {
+                Color.black.edgesIgnoringSafeArea(.all)
+                
+                if let kepUrl = hir.kep,
+                   let url = URL(string: kepUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .edgesIgnoringSafeArea(.all)
+                        case .failure(_):
+                            defaultSportImage
+                        case .empty:
+                            ProgressView()
+                        @unknown default:
+                            defaultSportImage
+                        }
+                    }
+                }
+                
+                // Bezáró gomb - minimum 44x44pt
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            showingFullScreenImage = false
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 30))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44) // Minimum érintési felület
+                                .padding()
+                        }
+                    }
+                    Spacer()
+                }
+            }
+        }
     }
     
     // URL kereső függvény visszaadása

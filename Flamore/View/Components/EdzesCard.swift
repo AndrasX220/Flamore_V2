@@ -142,14 +142,3 @@ struct EdzesCard: View {
         }
     }
 }
-
-#Preview {
-    EdzesCard(edzes: Edzes(
-        id: 1,
-        megnevezes: "Reggeli Jóga",
-        idopont: "2024-06-01T08:00:00.000Z",
-        terem_id: 3,
-        klub_id: 2,
-        lezart: false
-    ))
-} 

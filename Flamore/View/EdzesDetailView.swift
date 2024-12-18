@@ -11,8 +11,6 @@ struct EdzesDetailView: View {
         "Nagy János", "Kiss Éva", "Szabó Péter", 
         "Kovács Anna", "Tóth Zoltán", "Varga Béla"
     ]
-    // Teszt megjegyzés - később API-ból jön
-    let megjegyzes = "Kérlek hozzatok magatokkal törölközőt és vizet. Az edzés intenzív lesz, kezdőknek is ajánlott, de saját tempóban lehet végezni a gyakorlatokat."
     
     var body: some View {
         ScrollView {
@@ -112,16 +110,22 @@ struct EdzesDetailView: View {
                 .cornerRadius(16)
                 .padding(.horizontal)
                 
-                // Edzői megjegyzés
-                if !megjegyzes.isEmpty {
+                // Edzői megjegyzés - most már az API-ból
+                if let megjegyzes = edzes.megjegyzes, !megjegyzes.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Edzői megjegyzés")
-                            .font(.title3)
-                            .fontWeight(.semibold)
+                        HStack {
+                            Image(systemName: "text.bubble")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                            Text("Edzői megjegyzés")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
                         
                         Text(megjegyzes)
                             .font(.body)
                             .foregroundColor(.secondary)
+                            .lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding()
@@ -180,7 +184,7 @@ struct EdzesDetailView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .frame(height: 50) // Apple Design Guide szerint
                         .background(Color.blue)
                         .cornerRadius(16)
                 }
@@ -221,7 +225,7 @@ struct EdzesDetailView: View {
                             event.title = edzes.megnevezes
                             event.startDate = startDate
                             event.endDate = Calendar.current.date(byAdding: .hour, value: 1, to: startDate)
-                            event.notes = megjegyzes
+                            event.notes = edzes.megjegyzes
                             event.location = "Terem \(edzes.terem_id)"
                             event.calendar = eventStore.defaultCalendarForNewEvents
                             
@@ -295,6 +299,7 @@ struct EdzesDetailView: View {
         idopont: "2024-06-01T08:00:00.000Z",
         terem_id: 3,
         klub_id: 2,
-        lezart: false
+        lezart: false, edzo_id:1,
+        megjegyzes: "asda"
     ))
 } 
