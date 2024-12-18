@@ -8,6 +8,7 @@ struct HomeView: View {
     @State private var errorMessage: String?
     @State private var selectedEdzesType: String?
     @State private var showAllWorkouts = false
+    @State private var isRefreshing = false
     
     var edzesTypes: [String] {
         let types = Array(Set(edzesek.map { $0.megnevezes }))
@@ -52,11 +53,26 @@ struct HomeView: View {
     }
     
     var filteredEdzesek: [Edzes] {
-        if let selectedType = selectedEdzesType {
-            return edzesek.filter { $0.megnevezes == selectedType }
+        // Először konvertáljuk a dátumokat és rendezzük
+        let sortedEdzesek = edzesek.sorted { edzes1, edzes2 in
+            let date1 = isoDateFormatter.date(from: edzes1.idopont) ?? Date.distantFuture
+            let date2 = isoDateFormatter.date(from: edzes2.idopont) ?? Date.distantFuture
+            return date1 < date2
         }
-        return edzesek
+        
+        // Aztán szűrjük típus szerint, ha van kiválasztva
+        if let selectedType = selectedEdzesType {
+            return sortedEdzesek.filter { $0.megnevezes == selectedType }
+        }
+        return sortedEdzesek
     }
+    
+    // Dátum formázó a rendezéshez
+    private let isoDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
     
     var displayedEdzesek: [Edzes] {
         if showAllWorkouts {
@@ -66,6 +82,57 @@ struct HomeView: View {
         }
     }
     
+    // Felhasználói adatok lekérdezése
+    private func fetchUserData() async {
+        guard let url = URL(string: "\(Settings.baseURL)/api/felhasznalok/\(userData.id)") else {
+            errorMessage = "Érvénytelen URL"
+            return
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                errorMessage = "Szerver hiba történt"
+                return
+            }
+            
+            let decoder = JSONDecoder()
+            let sajatAdat = try decoder.decode(UserDetails.self, from: data)
+            
+            DispatchQueue.main.async {
+                userData.nev = sajatAdat.nev
+                userData.email = sajatAdat.email
+                userData.klub_id = sajatAdat.klub_id
+                userData.edzo = sajatAdat.edzo
+                userData.telefon = sajatAdat.telefon ?? ""
+                userData.budopass = sajatAdat.budopass ?? ""
+                userData.ovfokozat = sajatAdat.ovfokozat ?? ""
+                userData.egyeb_adatok = sajatAdat.egyeb_adatok
+                userData.profil_kep = sajatAdat.profil_kep
+            }
+            
+        } catch {
+            DispatchQueue.main.async {
+                errorMessage = "Hiba történt az adatok betöltése közben: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    // Minden adat frissítése
+    private func refreshAll() async {
+        isRefreshing = true
+        // Párhuzamosan futtatjuk a lekérdezéseket
+        async let userData = fetchUserData()
+        async let edzesekData = fetchEdzesek()
+        
+        // Megvárjuk mindkét lekérdezés befejezését
+        _ = await [userData, edzesekData]
+        
+        isRefreshing = false
+    }
+    
     var body: some View {
         TabView(selection: $selectedTab) {
             mainView
@@ -73,6 +140,10 @@ struct HomeView: View {
                     Label(getTitle(for: 0), systemImage: getIcon(for: 0))
                 }
                 .tag(0)
+                .task {
+                    // Felhasználói adatok lekérdezése amikor a nézet megjelenik
+                    await fetchUserData()
+                }
             
             HirekView()
                 .tabItem {
@@ -100,10 +171,28 @@ struct HomeView: View {
             VStack(spacing: 20) {
                 // Profil fejléc
                 HStack(spacing: 16) {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .frame(width: 50, height: 50)
-                        .foregroundColor(.gray)
+                    if let profilKepUrl = userData.profil_kep,
+                       let url = URL(string: profilKepUrl) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 50, height: 50)
+                                    .clipShape(Circle())
+                            case .failure(_):
+                                alapProfilKep
+                            case .empty:
+                                ProgressView()
+                                    .frame(width: 50, height: 50)
+                            @unknown default:
+                                alapProfilKep
+                            }
+                        }
+                    } else {
+                        alapProfilKep
+                    }
                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Castrum")
@@ -118,9 +207,6 @@ struct HomeView: View {
                     Button(action: {}) {
                         Image(systemName: "chevron.down")
                             .foregroundColor(.gray)
-                            .padding(8)
-                            .background(Color.gray.opacity(0.2))
-                            .clipShape(Circle())
                     }
                 }
                 .padding()
@@ -211,47 +297,49 @@ struct HomeView: View {
                 }
                 .padding(.horizontal)
             }
-            .padding(.bottom, 49)
+        }
+        .refreshable {
+            await refreshAll()
         }
         .background(Color(.systemBackground))
         .onAppear {
-            fetchEdzesek()
+            Task {
+                await fetchEdzesek()
+            }
         }
     }
     
-    private func fetchEdzesek() {
-        isLoading = true
-        errorMessage = nil
-        
-        guard let url = URL(string: "http://192.168.0.178:3000/api/edzesek") else {
+    // Módosítjuk a fetchEdzesek függvényt, hogy async legyen
+    private func fetchEdzesek() async {
+        guard let url = URL(string: "\(Settings.baseURL)/api/edzesek") else {
             errorMessage = "Érvénytelen URL"
             isLoading = false
             return
         }
         
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            DispatchQueue.main.async {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                errorMessage = "Szerver hiba történt"
                 isLoading = false
-                
-                if let error = error {
-                    errorMessage = "Hiba történt: \(error.localizedDescription)"
-                    return
-                }
-                
-                guard let data = data else {
-                    errorMessage = "Nem érkezett adat"
-                    return
-                }
-                
-                do {
-                    let decoder = JSONDecoder()
-                    self.edzesek = try decoder.decode([Edzes].self, from: data)
-                } catch {
-                    errorMessage = "Hiba az adatok feldolgozása során: \(error.localizedDescription)"
-                    print("Dekódolási hiba: \(error)")
-                }
+                return
             }
-        }.resume()
+            
+            let decodedEdzesek = try JSONDecoder().decode([Edzes].self, from: data)
+            
+            DispatchQueue.main.async {
+                self.edzesek = decodedEdzesek
+                self.isLoading = false
+            }
+            
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = "Hiba történt: \(error.localizedDescription)"
+                self.isLoading = false
+            }
+        }
     }
     
     private func getIcon(for index: Int) -> String {
@@ -272,6 +360,13 @@ struct HomeView: View {
         case 3: return "Információk"
         default: return ""
         }
+    }
+    
+    private var alapProfilKep: some View {
+        Image(systemName: "person.circle.fill")
+            .resizable()
+            .frame(width: 50, height: 50)
+            .foregroundColor(.gray)
     }
 }
 

@@ -7,23 +7,20 @@ struct RegisterView: View {
     @State private var errorMessage: String = ""
 
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             TextField("Név", text: $name)
-                .padding()
-                .background(Color.gray.opacity(0.2))
-                .cornerRadius(5.0)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding(.horizontal)
             
             TextField("Email", text: $email)
-                .padding()
-                .background(Color.gray.opacity(0.2))
-                .cornerRadius(5.0)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
                 .keyboardType(.emailAddress)
                 .autocapitalization(.none)
+                .padding(.horizontal)
             
             SecureField("Jelszó", text: $password)
-                .padding()
-                .background(Color.gray.opacity(0.2))
-                .cornerRadius(5.0)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding(.horizontal)
             
             Button(action: registerUser) {
                 Text("Regisztráció")
@@ -31,9 +28,9 @@ struct RegisterView: View {
                     .padding()
                     .background(Color.blue)
                     .foregroundColor(.white)
-                    .cornerRadius(5.0)
+                    .cornerRadius(10)
             }
-            .padding()
+            .padding(.horizontal)
 
             if !errorMessage.isEmpty {
                 Text(errorMessage)
@@ -41,37 +38,54 @@ struct RegisterView: View {
                     .padding()
             }
         }
-        .padding()
+        .padding(.vertical)
     }
-    func registerUser() {
-        // Logoljuk a felhasználó által beírt adatokat (fejlesztési célra)
-        print("Név: \(name)")
-        print("Email: \(email)")
-        print("Jelszó: \(password)")
 
-        guard let url = URL(string: "http://192.168.0.178:3000/api/auth/register") else { return }
+    func registerUser() {
+        guard let url = URL(string: "\(Settings.baseURL)/api/auth/register") else { 
+            errorMessage = "Érvénytelen URL"
+            return 
+        }
         
-        let body: [String: Any] = ["nev": name, "email": email, "jelszo": password,"klub_id":1]
+        let registerData = [
+            "nev": name,
+            "email": email,
+            "jelszo": password,
+            "klub_id": 1  // Alapértelmezett klub_id
+        ] as [String: Any]
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: registerData)
+        } catch {
+            errorMessage = "Hiba az adatok előkészítésénél"
+            return
+        }
 
         URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data, error == nil else {
-                DispatchQueue.main.async {
-                    errorMessage = "Hiba a szerverrel való kapcsolatban."
+            DispatchQueue.main.async {
+                if let error = error {
+                    errorMessage = "Hálózati hiba: \(error.localizedDescription)"
+                    return
                 }
-                return
-            }
 
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 201 {
-                DispatchQueue.main.async {
-                    errorMessage = "Sikeres regisztráció!"
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    errorMessage = "Érvénytelen szerver válasz"
+                    return
                 }
-            } else {
-                DispatchQueue.main.async {
-                    errorMessage = "Regisztráció sikertelen."
+
+                if httpResponse.statusCode == 201 {
+                    errorMessage = "Sikeres regisztráció! Kérjük jelentkezzen be."
+                } else {
+                    if let data = data,
+                       let errorResponse = String(data: data, encoding: .utf8) {
+                        errorMessage = "Regisztráció sikertelen: \(errorResponse)"
+                    } else {
+                        errorMessage = "Regisztráció sikertelen: Hibakód \(httpResponse.statusCode)"
+                    }
                 }
             }
         }.resume()

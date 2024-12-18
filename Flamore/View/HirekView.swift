@@ -18,19 +18,10 @@ extension String {
 struct HirekView: View {
     @State private var hirek: [Hir] = []
     @State private var isLoading = true
-    @State private var isLoadingDetail = false
     @State private var errorMessage: String?
     @State private var selectedHir: Hir?
     @State private var showingDetail = false
     @State private var showAllNews = false
-    
-    var displayedHirek: [Hir] {
-        if showAllNews {
-            return hirek
-        } else {
-            return Array(hirek.prefix(4))
-        }
-    }
     
     var body: some View {
         ScrollView {
@@ -55,373 +46,226 @@ struct HirekView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 40)
                 } else {
-                    if showAllNews {
-                        Button(action: {
-                            withAnimation {
-                                showAllNews = false
-                                scrollToTop()
-                            }
-                        }) {
-                            HStack {
-                                Text("Összes bezárása")
-                                Image(systemName: "chevron.up")
-                            }
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.blue)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(10)
-                        }
-                        .padding(.horizontal)
+                    ForEach(displayedHirek) { hir in
+                        HirCard(hir: hir, selectedHir: $selectedHir, showingDetail: $showingDetail)
+                            .padding(.horizontal)
                     }
                     
-                    LazyVStack(spacing: 20) {
-                        ForEach(displayedHirek) { hir in
-                            Button(action: {
-                                if !isLoading {
-                                    isLoadingDetail = true
-                                    selectedHir = hir
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                        showingDetail = true
-                                    }
-                                }
-                            }) {
-                                HirCard(hir: hir)
-                            }
-                            .buttonStyle(CardButtonStyle())
-                            .disabled(isLoading)
+                    if !showAllNews && hirek.count > 4 {
+                        Button(action: { showAllNews = true }) {
+                            Text("Több hír mutatása")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.blue)
+                                .frame(maxWidth: .infinity)
+                                .padding()
                         }
-                    }
-                    .padding(.horizontal)
-                    
-                    if hirek.count > 4 && !showAllNews {
-                        Button(action: {
-                            withAnimation {
-                                showAllNews = true
-                            }
-                        }) {
-                            HStack {
-                                Text("További hírek")
-                                Image(systemName: "chevron.down")
-                            }
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.blue)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(10)
-                        }
-                        .padding(.horizontal)
                     }
                 }
             }
-            .padding(.vertical)
         }
-        .background(Color(.systemBackground))
-        .sheet(isPresented: $showingDetail) {
-            if let hir = selectedHir {
-                HirDetailView(hir: hir, isLoading: $isLoadingDetail)
+        .refreshable {
+            await fetchHirek()
+        }
+        .sheet(item: $selectedHir) { hir in
+            NavigationView {
+                HirDetailView(hir: hir)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(action: {
+                                selectedHir = nil
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
             }
         }
-        .onAppear {
-            loadHirek()
+        .task {
+            if hirek.isEmpty {
+                await fetchHirek()
+            }
         }
     }
     
-    private func loadHirek() {
-        isLoading = true
-        fetchHirek()
+    // Rendezett hírek
+    private var sortedHirek: [Hir] {
+        hirek.sorted { hir1, hir2 in
+            let date1 = isoDateFormatter.date(from: hir1.letrehozasDatum) ?? Date.distantPast
+            let date2 = isoDateFormatter.date(from: hir2.letrehozasDatum) ?? Date.distantPast
+            return date1 > date2  // Legújabb hírek elöl
+        }
     }
     
-    private func fetchHirek() {
+    private var displayedHirek: [Hir] {
+        if showAllNews {
+            return sortedHirek
+        } else {
+            return Array(sortedHirek.prefix(4))
+        }
+    }
+    
+    private let isoDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    
+    private func fetchHirek() async {
         isLoading = true
+        errorMessage = nil
         
-        guard let url = URL(string: "http://192.168.0.178:3000/api/hirek") else {
-            print("URL hiba")
+        guard let url = URL(string: "\(Settings.baseURL)/api/hirek") else {
+            errorMessage = "Érvénytelen URL"
             isLoading = false
             return
         }
         
-        let urlRequest = URLRequest(url: url)
-        
-        URLSession.shared.dataTask(with: urlRequest) { data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("Hálózati hiba: \(error.localizedDescription)")
-                    self.isLoading = false
-                    return
-                }
-                
-                guard let httpResponse = response as? HTTPURLResponse,
-                      (200...299).contains(httpResponse.statusCode) else {
-                    print("Szerver hiba")
-                    self.isLoading = false
-                    return
-                }
-                
-                if let data = data {
-                    do {
-                        let decoder = JSONDecoder()
-                        decoder.dateDecodingStrategy = .iso8601
-                        let hirekResponse = try decoder.decode([Hir].self, from: data)
-                        self.hirek = hirekResponse
-                        print("Betöltött hírek száma: \(hirekResponse.count)")
-                    } catch {
-                        print("Dekódolási hiba: \(error)")
-                    }
-                }
-                
-                self.isLoading = false
-            }
-        }.resume()
-    }
-    
-    private func scrollToTop() {
-        let windows = UIApplication.shared.windows
-        windows.forEach { window in
-            window.rootViewController?.view.setNeedsLayout()
-        }
-    }
-}
-
-// Egyedi button style a kártyákhoz
-struct CardButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: configuration.isPressed)
-    }
-}
-
-struct HirCard: View {
-    let hir: Hir
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Kép
-            if let kepUrl = hir.kep, let url = URL(string: kepUrl) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(height: 200)
-                            .frame(maxWidth: .infinity)
-                            .clipped()
-                    case .failure(_):
-                        defaultSportImage
-                    case .empty:
-                        ProgressView()
-                            .frame(height: 200)
-                            .frame(maxWidth: .infinity)
-                            .background(Color(.systemGray6))
-                    @unknown default:
-                        defaultSportImage
-                    }
-                }
-            } else {
-                defaultSportImage
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                errorMessage = "Szerver hiba történt"
+                isLoading = false
+                return
             }
             
-            VStack(alignment: .leading, spacing: 12) {
-                // Dátum és klub egy sorban
-                HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock")
-                            .foregroundColor(.blue)
-                            .imageScale(.small)
-                        Text(hir.letrehozasDatum.formatDateToSingleLine())
-                            .foregroundColor(.secondary)
-                    }
-                    .font(.system(size: 14, weight: .medium))
-                    
-                    Spacer()
-                    
-                    Text("Castrum Sc")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.blue)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                
-                // Cím
-                Text(hir.cim)
-                    .font(.system(size: 22, weight: .bold))
-                    .lineSpacing(4)
-                    .padding(.horizontal, 16)
-                
-                // Rövid leírás
-                Text(hir.tartalom)
-                    .font(.system(size: 16))
-                    .foregroundColor(.secondary)
-                    .lineLimit(3)
-                    .lineSpacing(4)
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 16)
+            let decoder = JSONDecoder()
+            let ujHirek = try decoder.decode([Hir].self, from: data)
+            
+            DispatchQueue.main.async {
+                self.hirek = ujHirek
+                self.isLoading = false
             }
-            .padding(16)
+            
+        } catch {
+            DispatchQueue.main.async {
+                self.errorMessage = "Hiba történt az adatok betöltése közben: \(error.localizedDescription)"
+                self.isLoading = false
+            }
         }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 2)
-    }
-    
-    private var defaultSportImage: some View {
-        Image(systemName: "figure.martial.arts")
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .frame(height: 200)
-            .background(Color(.systemGray6))
-            .foregroundColor(.blue)
     }
 }
 
 struct HirDetailView: View {
     let hir: Hir
-    @Binding var isLoading: Bool
-    @Environment(\.presentationMode) var presentationMode
+    @State private var showingFullScreenImage = false
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Kép
-                        if let kepUrl = hir.kep, let url = URL(string: kepUrl) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if let kepUrl = hir.kep,
+                   let url = URL(string: kepUrl) {
+                    Button(action: {
+                        showingFullScreenImage = true
+                    }) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(maxHeight: 300)
+                                    .clipped()
+                            case .failure(_):
+                                defaultSportImage
+                            case .empty:
+                                ProgressView()
+                                    .frame(height: 300)
+                            @unknown default:
+                                defaultSportImage
+                            }
+                        }
+                    }
+                    .fullScreenCover(isPresented: $showingFullScreenImage) {
+                        ZStack {
+                            Color.black.edgesIgnoringSafeArea(.all)
+                            
                             AsyncImage(url: url) { phase in
                                 switch phase {
                                 case .success(let image):
                                     image
                                         .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(height: 300)
-                                        .frame(maxWidth: .infinity)
-                                        .clipped()
-                                        .onAppear {
-                                            isLoading = false
-                                        }
+                                        .aspectRatio(contentMode: .fit)
+                                        .edgesIgnoringSafeArea(.all)
                                 case .failure(_):
                                     defaultSportImage
-                                        .onAppear {
-                                            isLoading = false
-                                        }
                                 case .empty:
                                     ProgressView()
-                                        .frame(height: 300)
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color(.systemGray6))
                                 @unknown default:
                                     defaultSportImage
-                                        .onAppear {
-                                            isLoading = false
-                                        }
                                 }
                             }
-                        } else {
-                            defaultSportImage
-                                .onAppear {
-                                    isLoading = false
-                                }
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 16) {
-                            // Dátum és klub egy sorban
-                            HStack {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "clock")
-                                        .foregroundColor(.blue)
-                                        .imageScale(.small)
-                                    Text(hir.letrehozasDatum.formatDateToSingleLine())
-                                        .foregroundColor(.secondary)
-                                }
-                                .font(.system(size: 14, weight: .medium))
-                                
-                                Spacer()
-                                
-                                Text("Castrum Sc")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.blue)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.blue.opacity(0.1))
-                                    .cornerRadius(8)
-                            }
-                            .padding(.horizontal, 20)
                             
-                            // Cím
-                            Text(hir.cim)
-                                .font(.system(size: 28, weight: .bold))
-                                .lineSpacing(4)
-                            
-                            // Teljes leírás
-                            Text(hir.tartalom)
-                                .font(.system(size: 16))
-                                .foregroundColor(.secondary)
-                                .lineSpacing(6)
-                            
-                            // Link gomb
-                            if let url = findURL(in: hir.tartalom) {
-                                Button(action: {
-                                    UIApplication.shared.open(url)
-                                }) {
-                                    HStack {
-                                        Image(systemName: "link")
-                                            .imageScale(.medium)
-                                        Text("Link megnyitása")
-                                            .fontWeight(.semibold)
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Button(action: {
+                                        showingFullScreenImage = false
+                                    }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 30))
+                                            .foregroundColor(.white)
+                                            .padding()
                                     }
-                                    .frame(height: 44)
-                                    .frame(maxWidth: .infinity)
-                                    .background(Color.blue)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(12)
                                 }
-                                .padding(.top, 8)
+                                Spacer()
                             }
                         }
-                        .padding(.vertical, 20)
                     }
+                } else {
+                    defaultSportImage
                 }
                 
-                if isLoading {
-                    Color.black.opacity(0.3)
-                        .edgesIgnoringSafeArea(.all)
-                        .overlay(
-                            ProgressView()
-                                .scaleEffect(1.5)
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        )
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(hir.cim)
+                        .font(.system(size: 24, weight: .bold))
+                        .padding(.horizontal)
+                    
+                    Text(hir.letrehozasDatum.formatDateToSingleLine())
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                    
+                    Divider()
+                        .padding(.horizontal)
+                    
+                    Text(hir.tartalom)
+                        .font(.system(size: 16))
+                        .lineSpacing(6)
+                        .padding(.horizontal)
+                    
+                    // Link gomb visszaadása
+                    if let url = findURL(in: hir.tartalom) {
+                        Link(destination: url) {
+                            HStack {
+                                Image(systemName: "link")
+                                    .font(.system(size: 16))
+                                Text("Link megnyitása")
+                                    .font(.system(size: 16, weight: .medium))
+                            }
+                            .foregroundColor(.blue)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.blue, lineWidth: 1)
+                            )
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                    }
                 }
+                .padding(.vertical)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(trailing: Button(action: {
-                presentationMode.wrappedValue.dismiss()
-            }) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.secondary)
-                    .imageScale(.large)
-                    .frame(width: 44, height: 44)
-            })
         }
+        .background(Color(.systemBackground))
+        .edgesIgnoringSafeArea(.top)
     }
     
-    private var defaultSportImage: some View {
-        Image(systemName: "figure.martial.arts")
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .frame(height: 300)
-            .background(Color(.systemGray6))
-            .foregroundColor(.blue)
-    }
-    
+    // URL kereső függvény visszaadása
     private func findURL(in text: String) -> URL? {
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
         let matches = detector?.matches(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count))
@@ -431,6 +275,84 @@ struct HirDetailView: View {
             return URL(string: urlString)
         }
         return nil
+    }
+    
+    private var defaultSportImage: some View {
+        ZStack {
+            Color(.systemGray6)
+            Image(systemName: "newspaper.fill")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 60, height: 60)
+                .foregroundColor(.blue.opacity(0.5))
+        }
+        .frame(height: 300)
+    }
+}
+
+struct HirCard: View {
+    let hir: Hir
+    @Binding var selectedHir: Hir?
+    @Binding var showingDetail: Bool
+    
+    var body: some View {
+        Button(action: {
+            selectedHir = hir
+            showingDetail = true
+        }) {
+            VStack(alignment: .leading, spacing: 12) {
+                if let kepUrl = hir.kep,
+                   let url = URL(string: kepUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(height: 200)
+                                .clipped()
+                        case .failure(_):
+                            defaultSportImage
+                        case .empty:
+                            ProgressView()
+                                .frame(height: 200)
+                        @unknown default:
+                            defaultSportImage
+                        }
+                    }
+                } else {
+                    defaultSportImage
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(hir.cim)
+                        .font(.system(size: 18, weight: .semibold))
+                        .lineLimit(2)
+                    
+                    Text(hir.letrehozasDatum.formatDateToSingleLine())
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+            }
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private var defaultSportImage: some View {
+        ZStack {
+            Color(.systemGray6)
+            Image(systemName: "newspaper.fill")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 60, height: 60)
+                .foregroundColor(.blue.opacity(0.5))
+        }
+        .frame(height: 200)
     }
 }
 

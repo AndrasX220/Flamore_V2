@@ -26,8 +26,95 @@ struct InfoView: View {
         }
     }
     
+    private func fetchKlubInfo() async {
+        isLoading = true
+        
+        // Saját felhasználói adatok lekérdezése
+        guard let url = URL(string: "\(Settings.baseURL)/api/felhasznalok/\(userData.id)") else {
+            errorMessage = "Érvénytelen URL"
+            isLoading = false
+            return
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                errorMessage = "Szerver hiba történt"
+                isLoading = false
+                return
+            }
+            
+            let decoder = JSONDecoder()
+            let sajatAdat = try decoder.decode(UserDetails.self, from: data)
+            
+            // Az adatok beállítása a főszálon
+            DispatchQueue.main.async {
+                // Frissítjük a UserData objektumot
+                userData.nev = sajatAdat.nev
+                userData.email = sajatAdat.email
+                userData.klub_id = sajatAdat.klub_id
+                userData.edzo = sajatAdat.edzo
+                userData.telefon = sajatAdat.telefon ?? ""
+                userData.budopass = sajatAdat.budopass ?? ""
+                userData.ovfokozat = sajatAdat.ovfokozat ?? ""
+                userData.egyeb_adatok = sajatAdat.egyeb_adatok
+                userData.profil_kep = sajatAdat.profil_kep
+                isLoading = false
+            }
+            
+        } catch {
+            DispatchQueue.main.async {
+                errorMessage = "Hiba történt az adatok betöltése közben: \(error.localizedDescription)"
+                isLoading = false
+            }
+        }
+    }
+    
+    private func fetchKlubDetails(klubId: Int) async {
+        guard let url = URL(string: "\(Settings.baseURL)/api/klubok/\(klubId)") else {
+            errorMessage = "Érvénytelen klub URL"
+            isLoading = false
+            return
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                errorMessage = "Szerver hiba történt a klub adatok lekérdezésekor"
+                isLoading = false
+                return
+            }
+            
+            let decoder = JSONDecoder()
+            let klubInfo = try decoder.decode(KlubInfo.self, from: data)
+            
+            DispatchQueue.main.async {
+                self.klubNev = klubInfo.nev
+                self.klubCim = klubInfo.cim
+                self.klubTel = klubInfo.telefon
+                self.edzoNev = klubInfo.edzoNev
+                self.isLoading = false
+            }
+            
+        } catch {
+            DispatchQueue.main.async {
+                errorMessage = "Hiba történt a klub adatok betöltése közben: \(error.localizedDescription)"
+                isLoading = false
+            }
+        }
+    }
+    
     var body: some View {
         ScrollView {
+            if let errorMessage = errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .padding()
+            }
             VStack(alignment: .leading, spacing: 24) {
                 // Fejléc animált ikonnal
                 HStack {
@@ -36,11 +123,28 @@ struct InfoView: View {
                     
                     Spacer()
                     
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.blue)
-                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                        .animation(.easeInOut(duration: 2).repeatForever(autoreverses: false), value: isAnimating)
+                    if let profilKepUrl = userData.profil_kep,
+                       let url = URL(string: profilKepUrl) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(Circle())
+                            case .failure(_):
+                                alapProfilKep
+                            case .empty:
+                                ProgressView()
+                                    .frame(width: 40, height: 40)
+                            @unknown default:
+                                alapProfilKep
+                            }
+                        }
+                    } else {
+                        alapProfilKep
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -59,6 +163,7 @@ struct InfoView: View {
                             Név: \(userData.nev)
                             Email: \(userData.email)
                             Telefon: \(userData.telefon ?? "Nincs megadva")
+                            \(userData.egyeb_adatok != nil ? "Egyéb: \(userData.egyeb_adatok!)" : "")
                             """
                         )
                         
@@ -132,8 +237,10 @@ struct InfoView: View {
         }
         .background(Color(.systemBackground))
         .onAppear {
-            isLoading = false
             isAnimating = true
+            Task {
+                await fetchKlubInfo()
+            }
         }
     }
 }
@@ -233,6 +340,23 @@ extension View {
     func pressEvents(onPress: @escaping () -> Void, onRelease: @escaping () -> Void) -> some View {
         modifier(PressActions(onPress: onPress, onRelease: onRelease))
     }
+}
+
+// Hozd létre a megfelelő modellt a szerver válaszához
+struct KlubInfo: Codable {
+    let nev: String
+    let cim: String
+    let telefon: String
+    let edzoNev: String
+    // Add hozzá a többi szükséges mezőt
+}
+
+// Átnevezzük és egyszerűsítjük az alap profilképet
+private var alapProfilKep: some View {
+    Image(systemName: "person.circle.fill")
+        .font(.system(size: 40))
+        .foregroundColor(.blue)
+        .frame(width: 40, height: 40)
 }
 
 #Preview {
