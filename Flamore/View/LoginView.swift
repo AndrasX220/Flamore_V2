@@ -1,10 +1,23 @@
 import SwiftUI
 
+struct UserResponse: Codable {
+    let token: String
+    let user: UserDetails
+}
+
+struct UserDetails: Codable {
+    let id: Int
+    let nev: String
+    let email: String
+    let klub_id: Int
+    let edzo: Bool
+}
+
 struct LoginView: View {
+    @StateObject private var userData = UserData()
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var errorMessage: String = ""
-    @State private var isLoggedIn: Bool = false
     @Environment(\.presentationMode) var presentationMode
     
     var body: some View {
@@ -38,8 +51,9 @@ struct LoginView: View {
             }
         }
         .padding()
-        .fullScreenCover(isPresented: $isLoggedIn) {
+        .fullScreenCover(isPresented: $userData.isLoggedIn) {
             HomeView()
+                .environmentObject(userData)
         }
     }
 
@@ -62,22 +76,20 @@ struct LoginView: View {
                     return
                 }
 
-                if let httpResponse = response as? HTTPURLResponse {
-                    print("HTTP válasz kód: \(httpResponse.statusCode)")
-                }
-
                 if let data = data {
                     do {
-                        if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                            if let token = json["token"] as? String {
-                                isLoggedIn = true
-                                errorMessage = ""
-                            } else {
-                                errorMessage = "Bejelentkezés sikertelen: Hibás token."
-                            }
-                        }
+                        let userResponse = try JSONDecoder().decode(UserResponse.self, from: data)
+                        userData.token = userResponse.token
+                        userData.id = userResponse.user.id
+                        userData.nev = userResponse.user.nev
+                        userData.email = userResponse.user.email
+                        userData.klub_id = userResponse.user.klub_id
+                        userData.edzo = userResponse.user.edzo
+                        userData.isLoggedIn = true
+                        errorMessage = ""
                     } catch {
-                        errorMessage = "Bejelentkezés sikertelen: Érvénytelen válasz."
+                        errorMessage = "Bejelentkezés sikertelen: \(error.localizedDescription)"
+                        print("JSON parse hiba részletek: \(error)")
                     }
                 } else {
                     errorMessage = "Bejelentkezés sikertelen: Nincs adat."
